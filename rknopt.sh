@@ -16,9 +16,15 @@ set -uo pipefail
 # so all `read` use /dev/tty. If no terminal exists, exit instead of looping.
 if [ ! -t 0 ] && [ ! -e /dev/tty ]; then
  echo "Нет доступа к терминалу для ввода. Запустите так:" >&2
- echo "  bash <(curl -fsSL https://raw.githubusercontent.com/NikitaAzmov/RKN-PROTECT/main/rknopt.sh)" >&2
+ echo "  curl -fsSL https://raw.githubusercontent.com/NikitaAzmov/RKN-PROTECT/main/rknopt.sh | sudo bash" >&2
  exit 1
 fi
+
+# Неинтерактивная установка пакетов: apt и needrestart не должны
+# показывать диалоги (иначе скрипт зависает на "Restarting services...").
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+export NEEDRESTART_SUSPEND=1
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 
