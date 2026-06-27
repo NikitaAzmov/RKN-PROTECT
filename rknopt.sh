@@ -4,11 +4,7 @@
 # https://github.com/NikitaAzmov/RKN-PROTECT
 # Совместимо с: Remnawave + VLESS + XTLS-Reality
 #
-# Использование:
-#   sudo ./rknopt.sh              — интерактивное меню
-#   sudo ./rknopt.sh all          — все модули + автозапуск
-#   sudo ./rknopt.sh sysctl       — один модуль
-#   sudo ./rknopt.sh --help       — справка
+# Использование: sudo ./rknopt.sh
 # ================================================================
 # set -euo pipefail намеренно НЕ используется:
 # многие команды возвращают ненулевой код в штатных ситуациях
@@ -1231,7 +1227,7 @@ run_all_modules() {
 run_fail2ban_status() {
  echo ""
  if ! systemctl is-active --quiet fail2ban 2>/dev/null; then
-  warn "Fail2ban не запущен. Запустите: sudo ./rknopt.sh fail2ban"
+  warn "Fail2ban не запущен — выберите пункт 5 в меню модулей"
  else
   fail2ban-client status sshd 2>/dev/null || warn "Jail sshd недоступен — проверьте: fail2ban-client status"
   echo ""
@@ -1244,184 +1240,125 @@ run_fail2ban_status() {
  echo ""
 }
 
-dispatch_choice() {
- local choice="${1:-8}"
- _log_raw "Выбор: ${choice}"
+show_module_menu() {
+ while true; do
+  echo ""
+  echo "── Отдельные модули ──"
+  echo " 1) sysctl hardening (BBR)"
+  echo " 2) nftables — TTL=128 + ICMP"
+  echo " 3) Лимиты fd для Xray"
+  echo " 4) DNS-over-TLS"
+  echo " 5) Fail2ban"
+  echo " 6) SSH hardening"
+  echo " 7) Отключение протоколов (dccp/sctp/rds/tipc)"
+  echo " 8) Автозапуск (systemd)"
+  echo " 0) Назад в главное меню"
+  echo ""
+  read -r -p "Модуль [0-8]: " MOD_CHOICE
+  _log_raw "Выбор модуля: ${MOD_CHOICE}"
 
- case "${choice}" in
-  1|sysctl) apply_sysctl ;;
-  2|nftables) apply_nftables ;;
-  3|fd|fd-limits|limits) apply_fd_limits ;;
-  4|dot|dns) configure_dot ;;
-  5|fail2ban|f2b)
-   if [ "${2:-}" = "status" ]; then
-    run_fail2ban_status
-   else
-    configure_fail2ban
-   fi
-   ;;
-  6|ssh) harden_ssh ;;
-  7|protocols|proto) disable_unused_protocols ;;
-  8|all|install|"")
-   run_all_modules
-   ;;
-  9|status) status_check; return 0 ;;
-  10|rollback) rollback; return 0 ;;
-  *)
-   error "Неизвестный модуль: ${choice}. Справка: sudo ./rknopt.sh --help"
-   ;;
- esac
- return 1
-}
-
-show_help() {
- cat << 'EOF'
-
-RKN Opt — оптимизация и защита Linux-ноды от РКН/ТСПУ/DPI
-Совместимо с Remnawave + VLESS + XTLS-Reality
-Без смены портов и без правок UFW/firewall-портов
-
-Быстрый старт:
-  curl -fsSL https://raw.githubusercontent.com/NikitaAzmov/RKN-PROTECT/main/rknopt.sh -o rknopt.sh
-  chmod +x rknopt.sh
-  sudo ./rknopt.sh all
-
-Интерактивное меню:
-  sudo ./rknopt.sh
-
-Запуск одного модуля:
-  sudo ./rknopt.sh sysctl
-  sudo ./rknopt.sh nftables
-  sudo ./rknopt.sh fd-limits
-  sudo ./rknopt.sh dns
-  sudo ./rknopt.sh fail2ban
-  sudo ./rknopt.sh ssh
-  sudo ./rknopt.sh protocols
-  sudo ./rknopt.sh autostart
-
-Служебные команды:
-  sudo ./rknopt.sh all          — все модули + автозапуск
-  sudo ./rknopt.sh status       — статус всех модулей
-  sudo ./rknopt.sh rollback     — откат изменений
-  sudo ./rknopt.sh fail2ban status — активные баны
-
-EOF
+  case "${MOD_CHOICE}" in
+   1) apply_sysctl; MOD_DONE=1; break ;;
+   2) apply_nftables; MOD_DONE=1; break ;;
+   3) apply_fd_limits; MOD_DONE=1; break ;;
+   4) configure_dot; MOD_DONE=1; break ;;
+   5)
+    echo ""
+    echo " a) Установить / настроить"
+    echo " b) Статус (активные баны)"
+    echo ""
+    read -r -p " [a/b]: " F2B_CHOICE
+    case "${F2B_CHOICE,,}" in
+     b) run_fail2ban_status ;;
+     *) configure_fail2ban; MOD_DONE=1 ;;
+    esac
+    break
+    ;;
+   6) harden_ssh; MOD_DONE=1; break ;;
+   7) disable_unused_protocols; MOD_DONE=1; break ;;
+   8) install_service; MOD_DONE=1; break ;;
+   0) return 1 ;;
+   *) warn "Неверный выбор" ;;
+  esac
+ done
+ return 0
 }
 
 print_footer() {
- local choice="${1:-8}"
+ local choice="${1:-menu}"
  echo ""
  info "Готово!"
  echo ""
- if [[ "${choice}" != "9" && "${choice}" != "status" && "${choice}" != "10" && "${choice}" != "rollback" ]]; then
+ if [[ "${choice}" != "status" && "${choice}" != "rollback" ]]; then
   echo " Проверка:"
-  echo " nft list table inet rknopt — активные правила nftables"
-  echo " resolvectl status — статус DNS-over-TLS"
-  echo " sysctl net.ipv4.tcp_rfc1337 — должно быть = 1"
+  echo " nft list table inet rknopt — правила nftables"
+  echo " resolvectl status — DNS-over-TLS"
+  echo " sysctl net.ipv4.tcp_rfc1337 — должно быть 1"
   echo ""
   _FINAL_IP=$(get_server_ip)
   if [ -n "$_FINAL_IP" ]; then
    SSH_PORT_FINAL=$(grep -E "^Port " /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -1)
    SSH_PORT_FINAL=${SSH_PORT_FINAL:-22}
-   echo -e " ${GREEN}Подключение к серверу:${NC}"
-   echo -e " ${YELLOW}ssh -p ${SSH_PORT_FINAL} user@${_FINAL_IP}${NC}"
+   echo -e " ${GREEN}Подключение:${NC} ${YELLOW}ssh -p ${SSH_PORT_FINAL} user@${_FINAL_IP}${NC}"
    echo ""
   fi
  fi
- echo " Лог выполнения: ${LOG_FILE}"
+ echo " Лог: ${LOG_FILE}"
  echo ""
  _log_raw "Скрипт завершён (выбор: ${choice})"
 }
 
 show_interactive_menu() {
- echo ""
- echo "============================================="
- echo " RKN Opt — совместимо с Remnawave"
- echo " VLESS + XTLS-Reality"
- echo " Без смены портов / без правок UFW"
- echo "============================================="
- echo ""
- echo "Модули защиты:"
- echo " 1) sysctl hardening (совместимо с BBR)"
- echo " 2) nftables — TTL=128 + ICMP + ping фильтрация"
- echo " 3) Лимиты fd для Xray (много клиентов)"
- echo " 4) DNS-over-TLS (Cloudflare + Quad9 + Yandex)"
- echo " 5) Fail2ban — защита от SSH брутфорса"
- echo " 6) SSH hardening (Lynis рекомендации)"
- echo " 7) Отключение неиспользуемых протоколов"
- echo " 8) Установить всё + автозапуск"
- echo " 9) Статус всех модулей"
- echo " 10) Откат изменений"
- echo ""
- echo " CLI: sudo ./rknopt.sh <модуль>  |  --help"
- echo ""
- read -r -p "Ваш выбор [1-10, Enter=8]: " CHOICE
- _log_raw "Выбор пользователя: ${CHOICE:-8}"
+ MOD_DONE=0
+ while true; do
+  echo ""
+  echo "============================================="
+  echo " RKN Opt — Remnawave + VLESS + XTLS-Reality"
+  echo "============================================="
+  echo ""
+  echo " 1) Установить ВСЁ сразу (все модули + автозапуск)"
+  echo " 2) Выбрать отдельный модуль"
+  echo " 3) Статус всех модулей"
+  echo " 4) Откат изменений"
+  echo " 0) Выход"
+  echo ""
+  read -r -p "Ваш выбор [0-4]: " CHOICE
+  _log_raw "Выбор пользователя: ${CHOICE}"
 
- case "${CHOICE:-8}" in
-  1) dispatch_choice sysctl ;;
-  2) dispatch_choice nftables ;;
-  3) dispatch_choice fd-limits ;;
-  4) dispatch_choice dns ;;
-  5)
-   echo ""
-   echo " 5) Fail2ban:"
-   echo " a) Установить / настроить"
-   echo " b) Статус (активные баны, jail sshd)"
-   echo ""
-   read -r -p " Ваш выбор [a/b]: " F2B_CHOICE
-   case "${F2B_CHOICE,,}" in
-    b) run_fail2ban_status ;;
-    *) configure_fail2ban ;;
-   esac
-   ;;
-  6) dispatch_choice ssh ;;
-  7) dispatch_choice protocols ;;
-  8|"") dispatch_choice all ;;
-  9) status_check; print_footer status; exit 0 ;;
-  10) rollback; print_footer rollback; exit 0 ;;
-  *) error "Неверный выбор" ;;
- esac
+  case "${CHOICE}" in
+   1)
+    run_all_modules
+    print_footer "all"
+    exit 0
+    ;;
+   2)
+    if show_module_menu; then
+     print_footer "module"
+     exit 0
+    fi
+    ;;
+   3)
+    status_check
+    echo ""
+    read -r -p "Enter — вернуться в меню..." _
+    ;;
+   4)
+    rollback
+    echo ""
+    read -r -p "Enter — вернуться в меню..." _
+    ;;
+   0)
+    info "Выход"
+    exit 0
+    ;;
+   *)
+    warn "Неверный выбор — введите число от 0 до 4"
+    ;;
+  esac
+ done
 }
 
 # ──────────────────────────────────────────────────────────────────
 # ТОЧКА ВХОДА
 # ──────────────────────────────────────────────────────────────────
-CLI_ARG="${1:-}"
-
-case "${CLI_ARG}" in
- -h|--help|help)
-  show_help
-  exit 0
-  ;;
- autostart|service)
-  install_service
-  print_footer autostart
-  exit 0
-  ;;
- "")
-  show_interactive_menu
-  print_footer "${CHOICE:-8}"
-  exit 0
-  ;;
- status)
-  status_check
-  print_footer status
-  exit 0
-  ;;
- rollback)
-  rollback
-  print_footer rollback
-  exit 0
-  ;;
- *)
-  dispatch_choice "${CLI_ARG}" "${2:-}"
-  rc=$?
-  if [ "$rc" -eq 0 ]; then
-   print_footer "${CLI_ARG}"
-   exit 0
-  fi
-  print_footer "${CLI_ARG}"
-  exit 0
-  ;;
-esac
+show_interactive_menu
