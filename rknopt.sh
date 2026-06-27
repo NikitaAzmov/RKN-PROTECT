@@ -12,6 +12,14 @@
 # Вместо этого — явные проверки критичных шагов через die() и run_critical()
 set -uo pipefail
 
+# Interactive input under `curl ... | bash`: stdin is the script pipe,
+# so all `read` use /dev/tty. If no terminal exists, exit instead of looping.
+if [ ! -t 0 ] && [ ! -e /dev/tty ]; then
+ echo "Нет доступа к терминалу для ввода. Запустите так:" >&2
+ echo "  bash <(curl -fsSL https://raw.githubusercontent.com/NikitaAzmov/RKN-PROTECT/main/rknopt.sh)" >&2
+ exit 1
+fi
+
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 
 # ──────────────────────────────────────────────────────────────────
@@ -102,7 +110,7 @@ check_nftables_compat() {
  warn "Правила TTL и mangle могут не применяться корректно."
  warn "Рекомендуется обновить ядро: apt-get install linux-image-amd64"
  echo ""
- read -r -p " Продолжить установку nftables на старом ядре? [y/N]: " OLD_KERNEL_OK
+ read -r -p " Продолжить установку nftables на старом ядре? [y/N]: " OLD_KERNEL_OK < /dev/tty
  [[ "${OLD_KERNEL_OK,,}" == "y" ]] || { info "nftables пропущен из-за старого ядра"; return 1; }
  fi
 
@@ -128,7 +136,7 @@ check_nftables_compat() {
  warn "Вероятно, nftables работает через iptables-nft-legacy."
  warn "TTL-манипуляция (основная функция модуля 2) работать НЕ БУДЕТ."
  echo ""
- read -r -p " Продолжить установку? [y/N]: " COMPAT_OK
+ read -r -p " Продолжить установку? [y/N]: " COMPAT_OK < /dev/tty
  [[ "${COMPAT_OK,,}" == "y" ]] || { info "nftables пропущен из-за несовместимости"; return 1; }
  else
  _log_raw "nftables: mangle+TTL работает корректно (ядро ${KERNEL_VER})"
@@ -147,7 +155,7 @@ check_os() {
  *)
  warn "Система $PRETTY_NAME не тестировалась."
  warn "Поддерживаются: Debian 12/13, Ubuntu 20.04/22.04/24.04"
- read -r -p " Продолжить на свой страх и риск? [y/N]: " OSOK
+ read -r -p " Продолжить на свой страх и риск? [y/N]: " OSOK < /dev/tty
  [[ "${OSOK,,}" == "y" ]] || exit 1
  ;;
  esac
@@ -268,7 +276,7 @@ apply_nftables() {
  warn " • После reboot UFW поднимается раньше и может перекрыть nftables-правила"
  warn " • Рекомендуется: либо оставить только UFW, либо только nftables"
  echo ""
- read -r -p " Продолжить установку nftables рядом с UFW? [y/N]: " UFW_OK
+ read -r -p " Продолжить установку nftables рядом с UFW? [y/N]: " UFW_OK < /dev/tty
  [[ "${UFW_OK,,}" == "y" ]] || { info "nftables пропущен"; return; }
  echo ""
  fi
@@ -861,7 +869,7 @@ harden_ssh() {
  warn "Это СЛОМАЕТ SSH-туннели (например: ssh -L, -R, -D, WireGuard-over-SSH)."
  warn "Если вы используете SSH для проброса портов — ответьте 'n' и пропустите этот модуль."
  echo ""
- read -r -p " Продолжить? [y/N]: " SSH_HARDEN_OK
+ read -r -p " Продолжить? [y/N]: " SSH_HARDEN_OK < /dev/tty
  [[ "${SSH_HARDEN_OK,,}" == "y" ]] || { info "SSH hardening пропущен"; return; }
  echo ""
 
@@ -1101,7 +1109,7 @@ rollback() {
  echo " 6) Всё — полный откат всех модулей"
  echo " 0) Отмена"
  echo ""
- read -r -p " Ваш выбор: " RB_CHOICE
+ read -r -p " Ваш выбор: " RB_CHOICE < /dev/tty
 
  # Б9: исправлен fallthrough — используем отдельную функцию для полного отката
  case "${RB_CHOICE}" in
@@ -1254,7 +1262,7 @@ show_module_menu() {
   echo " 8) Автозапуск (systemd)"
   echo " 0) Назад в главное меню"
   echo ""
-  read -r -p "Модуль [0-8]: " MOD_CHOICE
+  read -r -p "Модуль [0-8]: " MOD_CHOICE < /dev/tty
   _log_raw "Выбор модуля: ${MOD_CHOICE}"
 
   case "${MOD_CHOICE}" in
@@ -1267,7 +1275,7 @@ show_module_menu() {
     echo " a) Установить / настроить"
     echo " b) Статус (активные баны)"
     echo ""
-    read -r -p " [a/b]: " F2B_CHOICE
+    read -r -p " [a/b]: " F2B_CHOICE < /dev/tty
     case "${F2B_CHOICE,,}" in
      b) run_fail2ban_status ;;
      *) configure_fail2ban; MOD_DONE=1 ;;
@@ -1322,7 +1330,7 @@ show_interactive_menu() {
   echo " 4) Откат изменений"
   echo " 0) Выход"
   echo ""
-  read -r -p "Ваш выбор [0-4]: " CHOICE
+  read -r -p "Ваш выбор [0-4]: " CHOICE < /dev/tty
   _log_raw "Выбор пользователя: ${CHOICE}"
 
   case "${CHOICE}" in
@@ -1340,12 +1348,12 @@ show_interactive_menu() {
    3)
     status_check
     echo ""
-    read -r -p "Enter — вернуться в меню..." _
+    read -r -p "Enter — вернуться в меню..." _ < /dev/tty
     ;;
    4)
     rollback
     echo ""
-    read -r -p "Enter — вернуться в меню..." _
+    read -r -p "Enter — вернуться в меню..." _ < /dev/tty
     ;;
    0)
     info "Выход"
