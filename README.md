@@ -7,13 +7,7 @@
 
 ## Запуск
 
-**Рекомендуемая команда активации** (меню работает гарантированно):
-
-```bash
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/NikitaAzmov/RKN-PROTECT/main/rknopt.sh)
-```
-
-Альтернатива (тоже интерактивно):
+**Команда активации** (меню работает, ввод с терминала):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NikitaAzmov/RKN-PROTECT/main/rknopt.sh | sudo bash
